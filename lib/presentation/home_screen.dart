@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:lottie/lottie.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // ⬅️ Naya Import
 import '../data/weather_service.dart';
 import '../data/weather_model.dart';
 import '../utils/weather_icons.dart';
@@ -28,11 +29,18 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchWeather('Dera Ismail Khan'); // Default city
+    _loadLastCity(); // ⬅️ App khulte hi last city load hogi
     _searchController.addListener(_onSearchChanged);
   }
 
-  // 🔍 Typing ke waqt auto-search ka logic
+  // 💾 Memory se last city nikalne ka logic
+  Future<void> _loadLastCity() async {
+    final prefs = await SharedPreferences.getInstance();
+    // Agar koi city save nahi hai toh default 'Dera Ismail Khan' use hoga
+    final lastCity = prefs.getString('saved_city') ?? 'Dera Ismail Khan';
+    _fetchWeather(lastCity);
+  }
+
   _onSearchChanged() {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     _debounce = Timer(const Duration(milliseconds: 800), () {
@@ -50,6 +58,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final weather = await _weatherService.fetchWeatherByCity(cityName);
+
+      // 💾 Naya shehar search hone par usay memory mein Save karna
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('saved_city', weather.cityName);
+
       setState(() {
         _weather = weather;
         _isLoading = false;
@@ -57,7 +70,6 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       setState(() {
         _isLoading = false;
-        // Agar pehle se data hai toh error na dikhayein (silent error for auto-search)
         if (_weather == null) _errorMessage = "City not found";
       });
     }
@@ -77,21 +89,18 @@ class _HomeScreenState extends State<HomeScreen> {
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [
-          // 1. Premium Background Image
           Positioned.fill(
             child: Image.network(
               'https://images.unsplash.com/photo-1504608524841-42fe6f032b4b?q=80&w=1000',
               fit: BoxFit.cover,
             ),
           ),
-          // 2. Glassmorphism Layer (Blur effect)
           Positioned.fill(
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
               child: Container(color: Colors.black.withOpacity(0.4)),
             ),
           ),
-          // 3. Main Content Area
           SafeArea(
             child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
@@ -125,7 +134,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // 🔍 Modern Glass Search Bar
   Widget _buildSearchBar() {
     return Container(
       decoration: BoxDecoration(
@@ -153,7 +161,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // 🌡️ Main Weather UI
   Widget _buildWeatherContent() {
     return Column(
       children: [
@@ -167,7 +174,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 10),
 
-        // 🌀 Lottie Animation with Backup Icon
         SizedBox(
           height: 220,
           child: Lottie.network(
@@ -190,7 +196,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
         const SizedBox(height: 40),
 
-        // 📊 Stat Detail Card
         Container(
           padding: const EdgeInsets.all(25),
           decoration: BoxDecoration(
@@ -225,7 +230,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // 📅 7-Day Forecast (No Red Screen Fix)
   Widget _buildForecastList() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -254,7 +258,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     style: GoogleFonts.poppins(color: Colors.white, fontSize: 16)
                 ),
               ),
-              // Forecast mein hum static icons use kar rahe hain performance ke liye
               Icon(WeatherIcons.getWeatherIcon(item.iconCode), color: Colors.white70, size: 28),
               Text(
                   "${item.temp.round()}°",
