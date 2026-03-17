@@ -5,11 +5,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:lottie/lottie.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:geolocator/geolocator.dart'; // 📍 Naya import GPS ke liye
 import '../data/weather_service.dart';
 import '../data/weather_model.dart';
 import '../utils/weather_icons.dart';
 import '../utils/weather_animations.dart';
-import '../utils/weather_backgrounds.dart'; // ⬅️ Naya import
+import '../utils/weather_backgrounds.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -65,6 +66,49 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // 📍 NAYA FUNCTION: GPS Location Fetch Karna
+  Future<void> _fetchCurrentLocationWeather() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+      _searchController.clear();
+    });
+
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) throw Exception('Kripya GPS (Location) on karein.');
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          throw Exception('Location permission nahi mili.');
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        throw Exception('Location permission settings se allow karein.');
+      }
+
+      // Asli coordinates nikalna
+      Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+
+      // Coordinates ke zariye API call
+      final weather = await _weatherService.fetchWeatherByLocation(position.latitude, position.longitude);
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('saved_city', weather.cityName);
+
+      setState(() { _weather = weather; _isLoading = false; });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        // Agar error aaye toh toast ya text dikhayein
+        _errorMessage = e.toString().replaceAll("Exception: ", "");
+      });
+    }
+  }
+
   @override
   void dispose() {
     _searchController.removeListener(_onSearchChanged);
@@ -79,13 +123,12 @@ class _HomeScreenState extends State<HomeScreen> {
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [
-          // 🎨 DYNAMIC BACKGROUND WITH FADE ANIMATION
           Positioned.fill(
             child: AnimatedSwitcher(
-              duration: const Duration(seconds: 1), // 1 second ka smooth fade
+              duration: const Duration(seconds: 1),
               child: Image.network(
                 WeatherBackgrounds.getBackgroundUrl(_weather?.iconCode),
-                key: ValueKey(_weather?.iconCode), // Key lazmi hai animation trigger karne ke liye
+                key: ValueKey(_weather?.iconCode),
                 fit: BoxFit.cover,
                 width: double.infinity,
                 height: double.infinity,
@@ -95,7 +138,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
           Positioned.fill(
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8), // Blur thora kam kiya taake background nazar aaye
+              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
               child: Container(color: Colors.black.withOpacity(0.35)),
             ),
           ),
@@ -107,7 +150,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 children: [
                   const SizedBox(height: 20),
-                  _buildSearchBar(),
+                  _buildSearchBar(), // GPS Button is ke andar hai
                   const SizedBox(height: 30),
 
                   if (_isLoading && _weather == null)
@@ -120,7 +163,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   else if (_errorMessage.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 50),
-                        child: Text(_errorMessage, style: const TextStyle(color: Colors.white, fontSize: 18)),
+                        child: Text(_errorMessage, style: const TextStyle(color: Colors.white, fontSize: 18), textAlign: TextAlign.center),
                       ),
 
                   const SizedBox(height: 30),
@@ -147,9 +190,22 @@ class _HomeScreenState extends State<HomeScreen> {
           hintText: "Search city...",
           hintStyle: GoogleFonts.poppins(color: Colors.white54),
           prefixIcon: const Icon(Icons.search, color: Colors.white70),
-          suffixIcon: _isLoading
-              ? const Padding(padding: EdgeInsets.all(12.0), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70)))
-              : null,
+          // 📍 GPS Button Yahan Add Kiya Hai
+          suffixIcon: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_isLoading)
+                const Padding(
+                  padding: EdgeInsets.all(12.0),
+                  child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70)),
+                ),
+              IconButton(
+                icon: const Icon(Icons.my_location, color: Colors.white),
+                onPressed: _fetchCurrentLocationWeather,
+                tooltip: "Use Current Location",
+              ),
+            ],
+          ),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 15),
         ),
