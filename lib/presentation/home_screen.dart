@@ -1,112 +1,43 @@
+// lib/presentation/home_screen.dart
+
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'; // ⬅️ Riverpod Import
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:lottie/lottie.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:geolocator/geolocator.dart'; // 📍 Naya import GPS ke liye
-import '../data/weather_service.dart';
-import '../data/weather_model.dart';
+import '../providers/weather_provider.dart'; // ⬅️ Provider Import
 import '../utils/weather_icons.dart';
 import '../utils/weather_animations.dart';
 import '../utils/weather_backgrounds.dart';
 
-class HomeScreen extends StatefulWidget {
+// StatefulWidget ko ConsumerStatefulWidget mein badal diya
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  final WeatherService _weatherService = WeatherService();
+class _HomeScreenState extends ConsumerState<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
-
   Timer? _debounce;
-  WeatherModel? _weather;
-  bool _isLoading = false;
-  String _errorMessage = '';
 
   @override
   void initState() {
     super.initState();
-    _loadLastCity();
     _searchController.addListener(_onSearchChanged);
-  }
-
-  Future<void> _loadLastCity() async {
-    final prefs = await SharedPreferences.getInstance();
-    final lastCity = prefs.getString('saved_city') ?? 'Dera Ismail Khan';
-    _fetchWeather(lastCity);
   }
 
   _onSearchChanged() {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     _debounce = Timer(const Duration(milliseconds: 800), () {
       if (_searchController.text.trim().length > 2) {
-        _fetchWeather(_searchController.text.trim());
+        // ⬅️ Provider ke zariye fetchWeather call karna
+        ref.read(weatherProvider.notifier).fetchWeather(_searchController.text.trim());
       }
     });
-  }
-
-  Future<void> _fetchWeather(String cityName) async {
-    setState(() { _isLoading = true; _errorMessage = ''; });
-    try {
-      final weather = await _weatherService.fetchWeatherByCity(cityName);
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('saved_city', weather.cityName);
-
-      setState(() { _weather = weather; _isLoading = false; });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-        if (_weather == null) _errorMessage = "City not found";
-      });
-    }
-  }
-
-  // 📍 NAYA FUNCTION: GPS Location Fetch Karna
-  Future<void> _fetchCurrentLocationWeather() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = '';
-      _searchController.clear();
-    });
-
-    try {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) throw Exception('Kripya GPS (Location) on karein.');
-
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          throw Exception('Location permission nahi mili.');
-        }
-      }
-
-      if (permission == LocationPermission.deniedForever) {
-        throw Exception('Location permission settings se allow karein.');
-      }
-
-      // Asli coordinates nikalna
-      Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-
-      // Coordinates ke zariye API call
-      final weather = await _weatherService.fetchWeatherByLocation(position.latitude, position.longitude);
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('saved_city', weather.cityName);
-
-      setState(() { _weather = weather; _isLoading = false; });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-        // Agar error aaye toh toast ya text dikhayein
-        _errorMessage = e.toString().replaceAll("Exception: ", "");
-      });
-    }
   }
 
   @override
@@ -119,6 +50,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ⬅️ Provider se data sun-na (watch karna)
+    final weatherState = ref.watch(weatherProvider);
+    final weather = weatherState.weather;
+    final isLoading = weatherState.isLoading;
+    final errorMessage = weatherState.errorMessage;
+
     return Scaffold(
       extendBodyBehindAppBar: true,
       body: Stack(
@@ -127,22 +64,20 @@ class _HomeScreenState extends State<HomeScreen> {
             child: AnimatedSwitcher(
               duration: const Duration(seconds: 1),
               child: Image.network(
-                WeatherBackgrounds.getBackgroundUrl(_weather?.iconCode),
-                key: ValueKey(_weather?.iconCode),
+                WeatherBackgrounds.getBackgroundUrl(weather?.iconCode),
+                key: ValueKey(weather?.iconCode),
                 fit: BoxFit.cover,
                 width: double.infinity,
                 height: double.infinity,
               ),
             ),
           ),
-
           Positioned.fill(
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
               child: Container(color: Colors.black.withOpacity(0.35)),
             ),
           ),
-
           SafeArea(
             child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
@@ -150,20 +85,20 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 children: [
                   const SizedBox(height: 20),
-                  _buildSearchBar(), // GPS Button is ke andar hai
+                  _buildSearchBar(isLoading),
                   const SizedBox(height: 30),
 
-                  if (_isLoading && _weather == null)
+                  if (isLoading && weather == null)
                     const Padding(
                       padding: EdgeInsets.only(top: 100),
                       child: CircularProgressIndicator(color: Colors.white),
                     )
-                  else if (_weather != null)
-                    _buildWeatherContent()
-                  else if (_errorMessage.isNotEmpty)
+                  else if (weather != null)
+                    _buildWeatherContent(weather)
+                  else if (errorMessage.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 50),
-                        child: Text(_errorMessage, style: const TextStyle(color: Colors.white, fontSize: 18), textAlign: TextAlign.center),
+                        child: Text(errorMessage, style: const TextStyle(color: Colors.white, fontSize: 18), textAlign: TextAlign.center),
                       ),
 
                   const SizedBox(height: 30),
@@ -176,7 +111,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildSearchBar() {
+  Widget _buildSearchBar(bool isLoading) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.15),
@@ -190,19 +125,21 @@ class _HomeScreenState extends State<HomeScreen> {
           hintText: "Search city...",
           hintStyle: GoogleFonts.poppins(color: Colors.white54),
           prefixIcon: const Icon(Icons.search, color: Colors.white70),
-          // 📍 GPS Button Yahan Add Kiya Hai
           suffixIcon: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (_isLoading)
+              if (isLoading)
                 const Padding(
                   padding: EdgeInsets.all(12.0),
                   child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70)),
                 ),
               IconButton(
                 icon: const Icon(Icons.my_location, color: Colors.white),
-                onPressed: _fetchCurrentLocationWeather,
-                tooltip: "Use Current Location",
+                // ⬅️ Provider ke zariye GPS location call karna
+                onPressed: () {
+                  _searchController.clear();
+                  ref.read(weatherProvider.notifier).fetchWeatherByLocation();
+                },
               ),
             ],
           ),
@@ -213,24 +150,24 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildWeatherContent() {
+  Widget _buildWeatherContent(weather) {
     return Column(
       children: [
-        Text(_weather!.cityName, style: GoogleFonts.poppins(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.white)),
+        Text(weather.cityName, style: GoogleFonts.poppins(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.white)),
         Text(DateFormat('EEEE, d MMMM').format(DateTime.now()), style: GoogleFonts.poppins(fontSize: 16, color: Colors.white70)),
         const SizedBox(height: 10),
 
         SizedBox(
           height: 220,
           child: Lottie.network(
-            WeatherAnimations.getWeatherAnimation(_weather!.iconCode),
+            WeatherAnimations.getWeatherAnimation(weather.iconCode),
             fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) => Icon(WeatherIcons.getWeatherIcon(_weather!.iconCode), size: 100, color: Colors.white),
+            errorBuilder: (context, error, stackTrace) => Icon(WeatherIcons.getWeatherIcon(weather.iconCode), size: 100, color: Colors.white),
           ),
         ),
 
-        Text("${_weather!.temperature.round()}°", style: GoogleFonts.poppins(fontSize: 100, fontWeight: FontWeight.w200, color: Colors.white)),
-        Text(_weather!.description.toUpperCase(), style: GoogleFonts.poppins(fontSize: 18, color: Colors.white, letterSpacing: 4, fontWeight: FontWeight.w300)),
+        Text("${weather.temperature.round()}°", style: GoogleFonts.poppins(fontSize: 100, fontWeight: FontWeight.w200, color: Colors.white)),
+        Text(weather.description.toUpperCase(), style: GoogleFonts.poppins(fontSize: 18, color: Colors.white, letterSpacing: 4, fontWeight: FontWeight.w300)),
 
         const SizedBox(height: 40),
 
@@ -244,15 +181,15 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildStatItem(Icons.water_drop_outlined, "${_weather!.humidity}%", "Humidity"),
+              _buildStatItem(Icons.water_drop_outlined, "${weather.humidity}%", "Humidity"),
               Container(width: 1, height: 40, color: Colors.white12),
-              _buildStatItem(Icons.air_rounded, "${_weather!.windSpeed} km/h", "Wind"),
+              _buildStatItem(Icons.air_rounded, "${weather.windSpeed} km/h", "Wind"),
             ],
           ),
         ),
 
         const SizedBox(height: 40),
-        _buildForecastList(),
+        _buildForecastList(weather),
       ],
     );
   }
@@ -268,7 +205,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildForecastList() {
+  Widget _buildForecastList(weather) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -276,7 +213,7 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.only(left: 5, bottom: 15),
           child: Text("7-Day Forecast", style: GoogleFonts.poppins(fontSize: 22, color: Colors.white, fontWeight: FontWeight.w600)),
         ),
-        ..._weather!.forecast.map((item) => Container(
+        ...weather.forecast.map((item) => Container(
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(25)),
