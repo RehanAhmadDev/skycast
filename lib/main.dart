@@ -11,12 +11,11 @@ class SkyCastApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'SkyCast Weather',
-      debugShowCheckedModeBanner: false, // Right corner wala debug banner hatane ke liye
+      debugShowCheckedModeBanner: false,
+      title: 'SkyCast',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueAccent),
         useMaterial3: true,
-        fontFamily: 'Roboto',
+        brightness: Brightness.dark,
       ),
       home: const HomeScreen(),
     );
