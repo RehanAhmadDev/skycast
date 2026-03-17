@@ -3,9 +3,11 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:lottie/lottie.dart';
 import '../data/weather_service.dart';
 import '../data/weather_model.dart';
 import '../utils/weather_icons.dart';
+import '../utils/weather_animations.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -17,17 +19,20 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final WeatherService _weatherService = WeatherService();
   final TextEditingController _searchController = TextEditingController();
+
   Timer? _debounce;
   WeatherModel? _weather;
   bool _isLoading = false;
+  String _errorMessage = '';
 
   @override
   void initState() {
     super.initState();
-    _fetchWeather('Dera Ismail Khan');
+    _fetchWeather('Dera Ismail Khan'); // Default city
     _searchController.addListener(_onSearchChanged);
   }
 
+  // 🔍 Typing ke waqt auto-search ka logic
   _onSearchChanged() {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     _debounce = Timer(const Duration(milliseconds: 800), () {
@@ -38,33 +43,79 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _fetchWeather(String cityName) async {
-    setState(() { _isLoading = true; });
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+    });
+
     try {
       final weather = await _weatherService.fetchWeatherByCity(cityName);
-      setState(() { _weather = weather; _isLoading = false; });
+      setState(() {
+        _weather = weather;
+        _isLoading = false;
+      });
     } catch (e) {
-      setState(() { _isLoading = false; });
+      setState(() {
+        _isLoading = false;
+        // Agar pehle se data hai toh error na dikhayein (silent error for auto-search)
+        if (_weather == null) _errorMessage = "City not found";
+      });
     }
+  }
+
+  @override
+  void dispose() {
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    _debounce?.cancel();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: true,
       body: Stack(
         children: [
-          Positioned.fill(child: Image.network('https://images.unsplash.com/photo-1504608524841-42fe6f032b4b?q=80&w=1000', fit: BoxFit.cover)),
-          Positioned.fill(child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5), child: Container(color: Colors.black.withOpacity(0.4)))),
+          // 1. Premium Background Image
+          Positioned.fill(
+            child: Image.network(
+              'https://images.unsplash.com/photo-1504608524841-42fe6f032b4b?q=80&w=1000',
+              fit: BoxFit.cover,
+            ),
+          ),
+          // 2. Glassmorphism Layer (Blur effect)
+          Positioned.fill(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Container(color: Colors.black.withOpacity(0.4)),
+            ),
+          ),
+          // 3. Main Content Area
           SafeArea(
             child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Column(
                 children: [
                   const SizedBox(height: 20),
                   _buildSearchBar(),
+                  const SizedBox(height: 30),
+
                   if (_isLoading && _weather == null)
-                    const Padding(padding: EdgeInsets.only(top: 100), child: CircularProgressIndicator(color: Colors.white))
+                    const Padding(
+                      padding: EdgeInsets.only(top: 100),
+                      child: CircularProgressIndicator(color: Colors.white),
+                    )
                   else if (_weather != null)
-                    _buildWeatherUI(),
+                    _buildWeatherContent()
+                  else if (_errorMessage.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 50),
+                        child: Text(_errorMessage, style: const TextStyle(color: Colors.white, fontSize: 18)),
+                      ),
+
+                  const SizedBox(height: 30),
                 ],
               ),
             ),
@@ -74,47 +125,141 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // 🔍 Modern Glass Search Bar
   Widget _buildSearchBar() {
     return Container(
-      decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(25)),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.2)),
+      ),
       child: TextField(
         controller: _searchController,
-        style: const TextStyle(color: Colors.white),
-        decoration: const InputDecoration(hintText: "Search City...", hintStyle: TextStyle(color: Colors.white54), prefixIcon: Icon(Icons.search, color: Colors.white70), border: InputBorder.none, contentPadding: EdgeInsets.symmetric(vertical: 15)),
+        style: GoogleFonts.poppins(color: Colors.white),
+        decoration: InputDecoration(
+          hintText: "Search city...",
+          hintStyle: GoogleFonts.poppins(color: Colors.white54),
+          prefixIcon: const Icon(Icons.search, color: Colors.white70),
+          suffixIcon: _isLoading
+              ? const Padding(
+            padding: EdgeInsets.all(12.0),
+            child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70)),
+          )
+              : null,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 15),
+        ),
       ),
     );
   }
 
-  Widget _buildWeatherUI() {
+  // 🌡️ Main Weather UI
+  Widget _buildWeatherContent() {
     return Column(
       children: [
-        const SizedBox(height: 20),
-        Text(_weather!.cityName, style: GoogleFonts.poppins(fontSize: 38, fontWeight: FontWeight.bold, color: Colors.white)),
-        Text(DateFormat('EEEE, d MMMM').format(DateTime.now()), style: GoogleFonts.poppins(color: Colors.white70)),
-        Icon(WeatherIcons.getWeatherIcon(_weather!.iconCode), size: 100, color: Colors.white),
-        Text("${_weather!.temperature.round()}°", style: GoogleFonts.poppins(fontSize: 100, fontWeight: FontWeight.w200, color: Colors.white)),
-        const SizedBox(height: 20),
-        _buildForecastList(), // Asli forecast data
+        Text(
+          _weather!.cityName,
+          style: GoogleFonts.poppins(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.white),
+        ),
+        Text(
+          DateFormat('EEEE, d MMMM').format(DateTime.now()),
+          style: GoogleFonts.poppins(fontSize: 16, color: Colors.white70),
+        ),
+        const SizedBox(height: 10),
+
+        // 🌀 Lottie Animation with Backup Icon
+        SizedBox(
+          height: 220,
+          child: Lottie.network(
+            WeatherAnimations.getWeatherAnimation(_weather!.iconCode),
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) {
+              return Icon(WeatherIcons.getWeatherIcon(_weather!.iconCode), size: 100, color: Colors.white);
+            },
+          ),
+        ),
+
+        Text(
+          "${_weather!.temperature.round()}°",
+          style: GoogleFonts.poppins(fontSize: 100, fontWeight: FontWeight.w200, color: Colors.white),
+        ),
+        Text(
+          _weather!.description.toUpperCase(),
+          style: GoogleFonts.poppins(fontSize: 18, color: Colors.white, letterSpacing: 4, fontWeight: FontWeight.w300),
+        ),
+
+        const SizedBox(height: 40),
+
+        // 📊 Stat Detail Card
+        Container(
+          padding: const EdgeInsets.all(25),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(30),
+            border: Border.all(color: Colors.white.withOpacity(0.1)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildStatItem(Icons.water_drop_outlined, "${_weather!.humidity}%", "Humidity"),
+              Container(width: 1, height: 40, color: Colors.white12),
+              _buildStatItem(Icons.air_rounded, "${_weather!.windSpeed} km/h", "Wind"),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 40),
+        _buildForecastList(),
       ],
     );
   }
 
+  Widget _buildStatItem(IconData icon, String value, String label) {
+    return Column(
+      children: [
+        Icon(icon, color: Colors.white70, size: 30),
+        const SizedBox(height: 8),
+        Text(value, style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+        Text(label, style: GoogleFonts.poppins(color: Colors.white60, fontSize: 12)),
+      ],
+    );
+  }
+
+  // 📅 7-Day Forecast (No Red Screen Fix)
   Widget _buildForecastList() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text("Next Days", style: GoogleFonts.poppins(fontSize: 22, color: Colors.white, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 15),
+        Padding(
+          padding: const EdgeInsets.only(left: 5, bottom: 15),
+          child: Text(
+            "7-Day Forecast",
+            style: GoogleFonts.poppins(fontSize: 22, color: Colors.white, fontWeight: FontWeight.w600),
+          ),
+        ),
         ..._weather!.forecast.map((item) => Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(15),
-          decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(25),
+          ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(DateFormat('EEEE').format(item.date), style: const TextStyle(color: Colors.white, fontSize: 16)),
-              Icon(WeatherIcons.getWeatherIcon(item.iconCode), color: Colors.white),
-              Text("${item.temp.round()}°C", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              SizedBox(
+                width: 100,
+                child: Text(
+                    DateFormat('EEEE').format(item.date),
+                    style: GoogleFonts.poppins(color: Colors.white, fontSize: 16)
+                ),
+              ),
+              // Forecast mein hum static icons use kar rahe hain performance ke liye
+              Icon(WeatherIcons.getWeatherIcon(item.iconCode), color: Colors.white70, size: 28),
+              Text(
+                  "${item.temp.round()}°",
+                  style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)
+              ),
             ],
           ),
         )).toList(),
