@@ -1,43 +1,25 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:geolocator/geolocator.dart';
 import 'api_constants.dart';
 import 'weather_model.dart';
 
 class WeatherService {
   Future<WeatherModel> fetchWeatherByCity(String cityName) async {
-    final url = Uri.parse('${ApiConstants.baseUrl}?q=$cityName&appid=${ApiConstants.apiKey}&units=metric');
+    final currentUrl = Uri.parse('${ApiConstants.baseUrl}?q=$cityName&appid=${ApiConstants.apiKey}&units=metric');
+    final forecastUrl = Uri.parse('https://api.openweathermap.org/data/2.5/forecast?q=$cityName&appid=${ApiConstants.apiKey}&units=metric');
 
-    try {
-      final response = await http.get(url).timeout(const Duration(seconds: 10));
-      if (response.statusCode == 200) {
-        return WeatherModel.fromJson(json.decode(response.body));
-      } else {
-        throw Exception('City not found');
-      }
-    } catch (e) {
-      throw Exception('Network error');
-    }
-  }
+    final currentRes = await http.get(currentUrl);
+    final forecastRes = await http.get(forecastUrl);
 
-  Future<WeatherModel> fetchWeatherByLocation() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) throw Exception('Location services are disabled.');
-
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) throw Exception('Permission denied.');
-    }
-
-    Position position = await Geolocator.getCurrentPosition();
-    final url = Uri.parse('${ApiConstants.baseUrl}?lat=${position.latitude}&lon=${position.longitude}&appid=${ApiConstants.apiKey}&units=metric');
-
-    final response = await http.get(url).timeout(const Duration(seconds: 10));
-    if (response.statusCode == 200) {
-      return WeatherModel.fromJson(json.decode(response.body));
+    if (currentRes.statusCode == 200 && forecastRes.statusCode == 200) {
+      return WeatherModel.fromJson(
+        json.decode(currentRes.body),
+        json.decode(forecastRes.body),
+      );
     } else {
-      throw Exception('Failed to load location weather');
+      throw Exception('Data fetch karne mein masla hai');
     }
   }
+
+// Location wala function bhi isi tarah update kiya ja sakta hai
 }
