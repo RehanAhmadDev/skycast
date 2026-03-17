@@ -4,11 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:lottie/lottie.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // ⬅️ Naya Import
+import 'package:shared_preferences/shared_preferences.dart';
 import '../data/weather_service.dart';
 import '../data/weather_model.dart';
 import '../utils/weather_icons.dart';
 import '../utils/weather_animations.dart';
+import '../utils/weather_backgrounds.dart'; // ⬅️ Naya import
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -29,14 +30,12 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadLastCity(); // ⬅️ App khulte hi last city load hogi
+    _loadLastCity();
     _searchController.addListener(_onSearchChanged);
   }
 
-  // 💾 Memory se last city nikalne ka logic
   Future<void> _loadLastCity() async {
     final prefs = await SharedPreferences.getInstance();
-    // Agar koi city save nahi hai toh default 'Dera Ismail Khan' use hoga
     final lastCity = prefs.getString('saved_city') ?? 'Dera Ismail Khan';
     _fetchWeather(lastCity);
   }
@@ -51,22 +50,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _fetchWeather(String cityName) async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = '';
-    });
-
+    setState(() { _isLoading = true; _errorMessage = ''; });
     try {
       final weather = await _weatherService.fetchWeatherByCity(cityName);
-
-      // 💾 Naya shehar search hone par usay memory mein Save karna
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('saved_city', weather.cityName);
 
-      setState(() {
-        _weather = weather;
-        _isLoading = false;
-      });
+      setState(() { _weather = weather; _isLoading = false; });
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -89,18 +79,27 @@ class _HomeScreenState extends State<HomeScreen> {
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [
+          // 🎨 DYNAMIC BACKGROUND WITH FADE ANIMATION
           Positioned.fill(
-            child: Image.network(
-              'https://images.unsplash.com/photo-1504608524841-42fe6f032b4b?q=80&w=1000',
-              fit: BoxFit.cover,
+            child: AnimatedSwitcher(
+              duration: const Duration(seconds: 1), // 1 second ka smooth fade
+              child: Image.network(
+                WeatherBackgrounds.getBackgroundUrl(_weather?.iconCode),
+                key: ValueKey(_weather?.iconCode), // Key lazmi hai animation trigger karne ke liye
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: double.infinity,
+              ),
             ),
           ),
+
           Positioned.fill(
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-              child: Container(color: Colors.black.withOpacity(0.4)),
+              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8), // Blur thora kam kiya taake background nazar aaye
+              child: Container(color: Colors.black.withOpacity(0.35)),
             ),
           ),
+
           SafeArea(
             child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
@@ -149,10 +148,7 @@ class _HomeScreenState extends State<HomeScreen> {
           hintStyle: GoogleFonts.poppins(color: Colors.white54),
           prefixIcon: const Icon(Icons.search, color: Colors.white70),
           suffixIcon: _isLoading
-              ? const Padding(
-            padding: EdgeInsets.all(12.0),
-            child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70)),
-          )
+              ? const Padding(padding: EdgeInsets.all(12.0), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70)))
               : null,
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 15),
@@ -164,14 +160,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildWeatherContent() {
     return Column(
       children: [
-        Text(
-          _weather!.cityName,
-          style: GoogleFonts.poppins(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.white),
-        ),
-        Text(
-          DateFormat('EEEE, d MMMM').format(DateTime.now()),
-          style: GoogleFonts.poppins(fontSize: 16, color: Colors.white70),
-        ),
+        Text(_weather!.cityName, style: GoogleFonts.poppins(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.white)),
+        Text(DateFormat('EEEE, d MMMM').format(DateTime.now()), style: GoogleFonts.poppins(fontSize: 16, color: Colors.white70)),
         const SizedBox(height: 10),
 
         SizedBox(
@@ -179,20 +169,12 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Lottie.network(
             WeatherAnimations.getWeatherAnimation(_weather!.iconCode),
             fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) {
-              return Icon(WeatherIcons.getWeatherIcon(_weather!.iconCode), size: 100, color: Colors.white);
-            },
+            errorBuilder: (context, error, stackTrace) => Icon(WeatherIcons.getWeatherIcon(_weather!.iconCode), size: 100, color: Colors.white),
           ),
         ),
 
-        Text(
-          "${_weather!.temperature.round()}°",
-          style: GoogleFonts.poppins(fontSize: 100, fontWeight: FontWeight.w200, color: Colors.white),
-        ),
-        Text(
-          _weather!.description.toUpperCase(),
-          style: GoogleFonts.poppins(fontSize: 18, color: Colors.white, letterSpacing: 4, fontWeight: FontWeight.w300),
-        ),
+        Text("${_weather!.temperature.round()}°", style: GoogleFonts.poppins(fontSize: 100, fontWeight: FontWeight.w200, color: Colors.white)),
+        Text(_weather!.description.toUpperCase(), style: GoogleFonts.poppins(fontSize: 18, color: Colors.white, letterSpacing: 4, fontWeight: FontWeight.w300)),
 
         const SizedBox(height: 40),
 
@@ -236,33 +218,18 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.only(left: 5, bottom: 15),
-          child: Text(
-            "7-Day Forecast",
-            style: GoogleFonts.poppins(fontSize: 22, color: Colors.white, fontWeight: FontWeight.w600),
-          ),
+          child: Text("7-Day Forecast", style: GoogleFonts.poppins(fontSize: 22, color: Colors.white, fontWeight: FontWeight.w600)),
         ),
         ..._weather!.forecast.map((item) => Container(
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
-            borderRadius: BorderRadius.circular(25),
-          ),
+          decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(25)),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              SizedBox(
-                width: 100,
-                child: Text(
-                    DateFormat('EEEE').format(item.date),
-                    style: GoogleFonts.poppins(color: Colors.white, fontSize: 16)
-                ),
-              ),
+              SizedBox(width: 100, child: Text(DateFormat('EEEE').format(item.date), style: GoogleFonts.poppins(color: Colors.white, fontSize: 16))),
               Icon(WeatherIcons.getWeatherIcon(item.iconCode), color: Colors.white70, size: 28),
-              Text(
-                  "${item.temp.round()}°",
-                  style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)
-              ),
+              Text("${item.temp.round()}°", style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
             ],
           ),
         )).toList(),
